@@ -1,0 +1,57 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+/// A person who asked for a call. `division` is added in a later migration.
+model Lead {
+  id         String   @id @default(cuid())
+  name       String
+  email      String
+  phone      String
+  source     String
+  status     String   @default("new")
+  nextAction String?
+  notes      String?
+  /// Required. Existing rows were backfilled while this column was still nullable.
+  division   String   @default("unassigned")
+  createdAt  DateTime @default(now())
+  calls      Call[]
+
+  @@index([createdAt])
+  @@index([phone])
+  @@index([status])
+}
+
+/// One Twilio call. `callSid` is Twilio's id and the idempotency key.
+model Call {
+  id              String            @id @default(cuid())
+  callSid         String            @unique
+  leadId          String?
+  lead            Lead?             @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  fromNumber      String?
+  toNumber        String?
+  status          String
+  direction       String?
+  durationSeconds Int?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  events          CallStatusEvent[]
+
+  @@index([leadId])
+}
+
+/// A single status observation. Retries of the same status collide on the unique key.
+model CallStatusEvent {
+  id         String   @id @default(cuid())
+  callSid    String
+  call       Call     @relation(fields: [callSid], references: [callSid], onDelete: Cascade)
+  callStatus String
+  receivedAt DateTime @default(now())
+
+  @@unique([callSid, callStatus])
+}

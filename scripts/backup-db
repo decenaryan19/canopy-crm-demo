@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# Copy the SQLite database before a migration or backfill.
+# Uses `sqlite3 .backup` when the CLI is installed, otherwise a file copy.
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+ENV_FILE="$ROOT/.env"
+
+if [[ -z "${DATABASE_URL:-}" && -f "$ENV_FILE" ]]; then
+  DATABASE_URL="$(grep -E '^DATABASE_URL=' "$ENV_FILE" | head -1 | cut -d= -f2- | tr -d '"' | tr -d "'")"
+fi
+
+URL="${DATABASE_URL:-file:./dev.db}"
+URL="${URL#file:}"
+
+if [[ "$URL" = /* ]]; then
+  SRC="$URL"
+else
+  # Prisma resolves a relative SQLite URL from the prisma/ directory.
+  SRC="$ROOT/prisma/$URL"
+fi
+
+if [[ ! -f "$SRC" ]]; then
+  echo "Database file not found: $SRC" >&2
+  exit 1
+fi
+
+STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
+DEST_DIR="$ROOT/backups"
+mkdir -p "$DEST_DIR"
+DEST="$DEST_DIR/$(basename "${SRC%.db}")-$STAMP.db"
+
+if command -v sqlite3 >/dev/null 2>&1; then
+  sqlite3 "$SRC" ".backup '$DEST'"
+  echo "Backed up with sqlite3 .backup"
+else
+  cp "$SRC" "$DEST"
+  echo "sqlite3 not found; copied the database file"
+fi
+
+echo "$DEST"
